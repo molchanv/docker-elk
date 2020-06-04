@@ -25,6 +25,10 @@ services:
       discovery.type: single-node
     networks:
       - elk
+    healthcheck:
+      interval: 20s
+      retries: 10
+      test: curl -s http://localhost:9200/_cluster/health | grep -vq '"status":"red"'
 
   logstash:
     build:
@@ -67,6 +71,44 @@ services:
       - elk
     depends_on:
       - elasticsearch
+    healthcheck:
+      interval: 10s
+      retries: 20
+      test: curl --write-out 'HTTP %{http_code}' --fail --silent --outp
+
+  apm-server:
+    cap_add: ["CHOWN", "DAC_OVERRIDE", "SETGID", "SETUID"]
+    cap_drop: ["ALL"]
+    build:
+      context: apm-server/
+      args:
+        ELK_VERSION: $ELK_VERSION
+    command: >
+       apm-server -e
+         -E apm-server.rum.enabled=true
+         -E setup.kibana.host=kibana:5601
+         -E output.elasticsearch.username=elastic
+         -E output.elasticsearch.password=changeme
+         -E setup.template.settings.index.number_of_replicas=0
+         -E apm-server.kibana.enabled=true
+         -E apm-server.kibana.host=kibana:5601
+         -E output.elasticsearch.hosts=["elasticsearch:9200"]
+    volumes:
+      - type: bind
+        source: ./apm-server/config/apm-server.yml
+        target: /usr/share/apm-server/config/apm-server.yml
+        read_only: true
+    ports:
+      - "8200:8200"
+    networks:
+      - elk
+    depends_on:
+      - elasticsearch
+      - kibana
+    healthcheck:
+      interval: 10s
+      retries: 12
+      test: curl --write-out 'HTTP %{http_code}' --fail --silent --output /dev/null http://localhost:8200/
 
 networks:
   elk:
